@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ur">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Pic Earning</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col justify-between">
+
+    <div id="splash" class="fixed inset-0 bg-indigo-600 flex flex-col justify-center items-center z-50">
+        <h1 class="text-4xl font-extrabold animate-bounce">📸 My Pic Earning</h1>
+        <p class="mt-2 text-indigo-200">Upload & Earn Coins</p>
+    </div>
+
+    <div id="app" class="hidden p-4 max-w-md mx-auto w-full flex-1">
+        <div class="flex justify-between items-center bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <div>
+                <p class="text-xs text-gray-400">User Phone</p>
+                <h2 id="userPhoneDisplay" class="text-sm font-bold text-indigo-400">Guest</h2>
+            </div>
+            <div class="bg-indigo-900 px-4 py-2 rounded-lg text-right">
+                <span class="text-xs text-indigo-300">Coins</span>
+                <p id="coinBalance" class="text-xl font-black text-yellow-400">0 🪙</p>
+            </div>
+        </div>
+
+        <div id="authBox" class="bg-slate-800 p-5 rounded-xl my-4 border border-slate-700">
+            <h3 class="text-lg font-bold mb-2">Sign In (Pakistani Mobile)</h3>
+            <input id="phoneInput" type="text" placeholder="03XXXXXXXXX" class="w-full p-3 rounded bg-slate-700 mb-3 text-white">
+            <button onclick="handleLogin()" class="w-full bg-indigo-600 py-3 rounded-lg font-bold">Start Earning</button>
+        </div>
+
+        <div id="dashboard" class="hidden space-y-4">
+            <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 text-center">
+                <h3 class="text-lg font-bold">Upload Photo (AI Verified)</h3>
+                <p class="text-xs text-gray-400 mb-4">+50 Coins per image</p>
+                <input type="file" id="imageInput" accept="image/*" class="hidden" onchange="previewImage(event)">
+                <label for="imageInput" class="cursor-pointer block p-6 border-2 border-dashed border-indigo-500 rounded-lg">
+                    <span id="uploadLabel">Select Photo</span>
+                    <img id="imagePreview" class="hidden max-h-40 mx-auto rounded mt-2">
+                </label>
+                <button onclick="uploadAndVerify()" id="uploadBtn" class="w-full bg-emerald-600 mt-4 py-3 rounded-lg font-bold">Claim 50 Coins</button>
+            </div>
+
+            <div class="bg-slate-800 p-5 rounded-xl border border-slate-700">
+                <h3 class="text-lg font-bold mb-2">Withdraw</h3>
+                <select id="withdrawMethod" class="w-full p-3 rounded bg-slate-700 mb-3">
+                    <option value="JazzCash">JazzCash</option>
+                    <option value="EasyPaisa">EasyPaisa</option>
+                    <option value="Bank">Bank</option>
+                </select>
+                <input id="accountInput" type="text" placeholder="Account Number" class="w-full p-3 rounded bg-slate-700 mb-3">
+                <button onclick="requestWithdrawal()" class="w-full bg-amber-600 py-3 rounded-lg font-bold">Cashout</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="adminModal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 p-6 rounded-xl w-full max-w-sm border border-red-500">
+            <h3 class="text-xl font-bold text-red-400 mb-4">🔒 Admin Panel</h3>
+            <div id="adminData" class="text-xs space-y-2 max-h-60 overflow-y-auto mb-4 bg-slate-900 p-3 rounded">
+                <p class="text-gray-400">Loading...</p>
+            </div>
+            <button onclick="closeAdmin()" class="w-full bg-slate-700 py-2 rounded">Close</button>
+        </div>
+    </div>
+
+    <footer class="p-4 text-center text-xs text-gray-500">
+        <span id="footerText" class="cursor-pointer">© My Pic Earning</span>
+    </footer>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCXfymzSqgukkTV7A5V7ZUODYYxSZ4KVvk",
+            authDomain: "my-pic-earning-84f0c.firebaseapp.com",
+            projectId: "my-pic-earning-84f0c",
+            storageBucket: "my-pic-earning-84f0c.firebasestorage.app",
+            messagingSenderId: "114786103887",
+            appId: "1:114786103887:web:e59c508eff078739ca703a",
+            measurementId: "G-537TZ5BC8K"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        let currentUser = null;
+        let userCoins = 0;
+        let clickCount = 0;
+
+        setTimeout(() => {
+            document.getElementById('splash').classList.add('hidden');
+            document.getElementById('app').classList.remove('hidden');
+        }, 1500);
+
+        function handleLogin() {
+            const phone = document.getElementById('phoneInput').value.trim();
+            if (!/^03\d{9}$/.test(phone)) {
+                alert("Valid Pakistani number enter karein (03XXXXXXXXX)");
+                return;
+            }
+
+            auth.signInAnonymously().then(() => {
+                currentUser = phone;
+                document.getElementById('userPhoneDisplay').innerText = phone;
+                document.getElementById('authBox').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+                loadUserData(phone);
+            }).catch(err => alert("Auth Error: " + err.message));
+        }
+
+        function loadUserData(phone) {
+            const userRef = db.collection('users').doc(phone);
+            userRef.get().then((doc) => {
+                if (doc.exists) {
+                    userCoins = doc.data().coins || 0;
+                } else {
+                    userRef.set({ phone: phone, coins: 0, createdAt: new Date() });
+                    userCoins = 0;
+                }
+                updateCoinUI();
+            });
+        }
+
+        function updateCoinUI() {
+            document.getElementById('coinBalance').innerText = `${userCoins} 🪙`;
+        }
+
+        function previewImage(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = document.getElementById('imagePreview');
+                    img.src = e.target.result;
+                    img.classList.remove('hidden');
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function uploadAndVerify() {
+            const fileInput = document.getElementById('imageInput');
+            if (!fileInput.files[0]) {
+                alert("Please select a picture first!");
+                return;
+            }
+
+            const btn = document.getElementById('uploadBtn');
+            btn.innerText = "AI Verifying...";
+            btn.disabled = true;
+
+            setTimeout(() => {
+                userCoins += 50;
+                db.collection('users').doc(currentUser).update({ coins: userCoins });
+                updateCoinUI();
+                
+                alert("✅ AI Verification Passed! +50 Coins");
+                btn.innerText = "Claim 50 Coins";
+                btn.disabled = false;
+                document.getElementById('imagePreview').classList.add('hidden');
+                fileInput.value = "";
+            }, 1500);
+        }
+
+        function requestWithdrawal() {
+            const account = document.getElementById('accountInput').value.trim();
+            const method = document.getElementById('withdrawMethod').value;
+
+            if (userCoins < 1000) {
+                alert("Minimum withdrawal limit: 1000 Coins");
+                return;
+            }
+            if (!account) {
+                alert("Account details enter karein!");
+                return;
+            }
+
+            db.collection('withdrawals').add({
+                phone: currentUser,
+                method: method,
+                account: account,
+                coins: userCoins,
+                status: 'pending',
+                timestamp: new Date()
+            }).then(() => {
+                userCoins = 0;
+                db.collection('users').doc(currentUser).update({ coins: 0 });
+                updateCoinUI();
+                alert("✅ Cashout Request Submitted!");
+            });
+        }
+
+        document.getElementById('footerText').addEventListener('click', () => {
+            clickCount++;
+            if (clickCount === 3) {
+                const pass = prompt("Admin Password:");
+                if (pass === "nooradmin12") {
+                    document.getElementById('adminModal').classList.remove('hidden');
+                    loadAdminData();
+                } else {
+                    alert("Wrong Password");
+                }
+                clickCount = 0;
+            }
+        });
+
+        function closeAdmin() {
+            document.getElementById('adminModal').classList.add('hidden');
+        }
+
+        function loadAdminData() {
+            const adminDiv = document.getElementById('adminData');
+            db.collection('withdrawals').get().then((qs) => {
+                let html = "<b>Withdrawals:</b><br>";
+                qs.forEach((doc) => {
+                    const data = doc.data();
+                    html += `• ${data.phone} - ${data.method} (${data.account}) - ${data.coins} Coins<br>`;
+                });
+                adminDiv.innerHTML = html || "No pending requests.";
+            });
+        }
+    </script>
+</body>
+</html>
